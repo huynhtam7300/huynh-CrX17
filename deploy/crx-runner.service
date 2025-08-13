@@ -1,0 +1,18 @@
+[Unit]
+Description=CrX Auto Runner
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/crx
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/opt/crx/.venv/bin/python auto_runner.py
+Restart=always
+RestartSec=5
+User=crx
+Group=crx
+StandardOutput=append:/var/log/crx_runner.log
+StandardError=append:/var/log/crx_runner.log
+
+[Install]
+WantedBy=multi-user.target

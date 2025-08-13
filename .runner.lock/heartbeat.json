@@ -1,0 +1,13 @@
+{
+  "last_tick_utc": "2025-08-12T15:47:59+00:00",
+  "pid": 16376,
+  "interval_sec": 900,
+  "next_eta_sec": 900,
+  "pipeline": [
+    "core.collector.market_collector",
+    "core.analyzer.technical_analyzer",
+    "core.decision.decision_maker",
+    "core.execution.order_executor",
+    "notifier.notify_decision"
+  ]
+}

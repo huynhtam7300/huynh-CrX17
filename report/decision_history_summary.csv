@@ -1,0 +1,11 @@
+metric,value
+records,31
+buy,5
+sell,26
+hold,0
+confidence_mean,0.55
+bandit_factor_mean,1.0
+funding_rate_mean,9.5e-05
+suggested_size_mean,0.2
+suggested_size_bandit_mean,0.2
+suggested_size_funding_mean,0.2

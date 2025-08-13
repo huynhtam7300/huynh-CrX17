@@ -1,0 +1,16 @@
+version: "3.9"
+services:
+  crx-core:
+    build: .
+    command: ["python", "auto_runner.py"]
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+    ports:
+      - "8501:8501"   # dashboard
+    healthcheck:
+      test: ["CMD", "bash", "scripts/healthcheck.sh"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

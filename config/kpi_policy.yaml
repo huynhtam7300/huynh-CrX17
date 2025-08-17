@@ -1,0 +1,6 @@
+weekly:
+  min_target_usd: 50
+  max_drawdown_pct: 5
+monthly:
+  min_target_usd: 300
+  max_drawdown_pct: 12

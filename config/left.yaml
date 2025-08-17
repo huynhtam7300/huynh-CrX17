@@ -1,0 +1,66 @@
+meta:
+  name: "LEFT / TA"
+  version: "1.7.7"
+  chg_id: "2025-08-17T16:24:08.945973+00:00"
+  description: "Các chiến lược TA: TREND, BO, MR, VWAP + bộ lọc."
+  owners: ["you@example.com"]
+  timezone: "Asia/Bangkok"
+
+filters:
+  regime:
+    bull: true
+    bear: true
+    sideway: true
+  multi_timeframe:
+    enabled: true
+    frames: ["5m","15m","1h","4h"]
+  time_of_day:
+    enabled: true
+    sessions:
+      - name: "Asia"
+        start: "01:00"
+        end: "09:00"
+      - name: "US"
+        start: "19:00"
+        end: "24:00"
+  funding_filter:
+    enabled: true
+    max_abs_rate: 0.02
+
+strategies:
+  TREND:
+    enabled: true
+    rsi_period: 14
+    ema_period: 34
+    confirm_mtf: "15m+1h"
+  BO:        # Breakout
+    enabled: true
+    lookback: 20
+    atr_mult: 1.5
+  MR:        # Mean Reversion
+    enabled: true
+    bb_period: 20
+    bb_std: 2.0
+  VWAP:
+    enabled: true
+    session_reset: "00:00"
+
+risk:
+  default_sl_tp:
+    rr: 1.5
+    max_sl_pct: 0.7
+    take_profit_pct: 1.05
+  position_sizing:
+    method: "expected_value_after_fee"
+    max_notional_usd: 200
+    min_notional_usd: 5
+
+output:
+  signal_confidence_floor: 0.55
+  max_signals_per_15m: 2
+
+notifications:
+  executed_only: true
+  template:
+    opened: "📈 LEFT mở vị thế {side} @ {price} (EV={ev})"
+    closed: "✅ LEFT đóng vị thế {side} PnL={pnl}"

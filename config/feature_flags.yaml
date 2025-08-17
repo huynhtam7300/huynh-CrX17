@@ -1,0 +1,406 @@
+# configs/feature_flags.yaml
+# CrX 1.7 — Feature Flags
+# Lưu ý:
+# - Các cờ an toàn (safety.*) mặc định fail-closed: nếu không xác định rõ -> chặn/thắt chặt thay vì nới lỏng.
+# - Phase cao hơn kế thừa từ phase thấp hơn, sau đó có thể override (A kế thừa CORE; B kế thừa A; C kế thừa B).
+# - "enabled" ở cấp module là cổng chính; cờ con chỉ có hiệu lực khi module enabled.
+
+meta:
+  version: 1.0.0
+  updated_at: "2025-08-12"
+  owner: "CrX-Central"
+  notes: >
+    Sửa file này có hiệu lực runtime nếu config loader hỗ trợ hot-reload;
+    nếu không, cần restart tiến trình tương ứng. Dùng cùng với configs/risk_limits.yaml & kpi_policy.yaml.
+
+defaults:
+  phase: CORE            # Phase mặc định khi không chỉ định
+  log_level: INFO        # DEBUG/INFO/WARN/ERROR
+  market:
+    symbols: ["BTCUSDT", "ETHUSDT"]
+    intervals: ["15m", "1h"]
+  safety_fail_closed: true
+  # Cho phép override qua env (ví dụ: FEATURE__decision__meta_controller__enabled=true)
+  env_override_prefix: "FEATURE__"   # __ phân tách level YAML
+
+scopes:
+  - PHASE
+  - MODULE
+  - STRATEGY
+  - SAFETY
+
+phases:
+  CORE:
+    enabled: true
+    description: "MVP an toàn, vòng đời lệnh end-to-end trên testnet."
+  A:
+    enabled: true
+    inherits: CORE
+    description: "Meta-Controller lite, shadow trade, capital gate & KPI."
+  B:
+    enabled: true
+    inherits: A
+    description: "Regime detection, Right-lite (news/sentiment), on-chain filter, smart execution."
+  C:
+    enabled: true
+    inherits: B
+    description: "Meta-learning, auto-retrain, multi-exchange routing, adaptive KPI."
+
+modules:
+
+  collector:
+    enabled: true
+    market_collector:
+      enabled: true
+      description: "WebSocket/REST OHLCV & ticker."
+      flags:
+        ws_enabled: { default: true, description: "Dùng WebSocket realtime nếu có." }
+        rest_backfill: { default: true, description: "Backfill nến khi khởi động." }
+        strict_timestamp: { default: true, description: "Chuẩn hóa UTC + kiểm tra lệch thời gian." }
+    macro_collector:
+      enabled: false
+      description: "Lịch FOMC/CPI (Phase B+)."
+      flags:
+        sources_min: { default: 1, description: "Số nguồn tối thiểu để coi là hợp lệ." }
+      phase_min: B
+    news_collector:
+      enabled: false
+      description: "Nguồn tin crypto-native/RSS (Phase B+)."
+      phase_min: B
+    social_collector:
+      enabled: false
+      description: "Crawler sentiment mạng xã hội (Phase B+)."
+      phase_min: B
+    onchain_collector:
+      enabled: false
+      description: "The Graph/Covalent free-tier + cache (Phase B+)."
+      phase_min: B
+      flags:
+        cache_ttl_sec: { default: 600, description: "TTL cache on-chain (giây)." }
+
+  feature_etl:
+    enabled: true
+    cleaner: { enabled: true, description: "Dọn NaN/dup, fix tz." }
+    selector: { enabled: true, description: "Chọn dữ liệu giá trị cao." }
+    encoder:  { enabled: true, description: "Scale/encode categorical." }
+    alignment:{ enabled: true, description: "Đồng bộ temporal theo 15m/1h." }
+
+  risk:
+    enabled: true
+    risk_intel:
+      enabled: true
+      description: "ATR%, correlation, liquidity guards."
+      flags:
+        atr_window: { default: 14, description: "ATR period." }
+        corr_window: { default: 96, description: "Số nến để tính tương quan." }
+        min_orderbook_depth_usd: { default: 50000, description: "Depth tối thiểu trước khi vào lệnh." }
+    safety_layer:
+      enabled: true
+      description: "Cửa kiểm soát cuối cùng trước khi gửi lệnh."
+      flags:
+        order_validation: { default: true, description: "Kiểm tra size/leverage/symbol whitelist." }
+        duplicate_guard:  { default: true, description: "Chặn lệnh trùng khung thời gian." }
+        timing_guard:     { default: true, description: "Chặn ngay trước/sau sự kiện macro." }
+        volatility_gate:  { default: true, description: "Chặn khi ATR% vượt ngưỡng." }
+        liquidity_check:  { default: true, description: "Kiểm tra slippage/độ sâu sổ lệnh." }
+        correlation_blocker: { default: true, description: "Hạn chế vị thế cùng hướng có tương quan cao." }
+        data_freshness_monitor: { default: true, description: "Chặn nếu dữ liệu quá cũ." }
+        server_health_guard: { default: true, description: "Giảm tần suất khi CPU/RAM/API xấu." }
+        kill_switch:
+          default: true
+          description: "Dừng toàn bộ khi DD vượt ngưỡng ngày/tuần."
+        freeze_on_anomaly:
+          default: true
+          description: "Đóng tất cả & dừng khi phát hiện flash-crash/API bug."
+    risk_off_switch:
+      enabled: true
+      description: "Chế độ Risk-off toàn cục do Central kích hoạt."
+      flags:
+        macro_event_listen: { default: true, description: "Theo dõi sự kiện macro để hạ rủi ro." }
+
+  analyzer:
+    enabled: true
+    technical_analyzer:
+      enabled: true
+      description: "Khối chỉ báo & mô hình giá."
+    left_strategies:
+      enabled: true
+      ema_trend:
+        enabled: true
+        description: "Trend-follow EMA20/50."
+        flags:
+          ema_fast: { default: 20, description: "Chu kỳ EMA nhanh." }
+          ema_slow: { default: 50, description: "Chu kỳ EMA chậm." }
+      atr_breakout:
+        enabled: true
+        description: "Breakout dựa trên ATR."
+        flags:
+          atr_mult_enter: { default: 1.5, description: "Ngưỡng breakout theo ATR." }
+      bb_meanreversion:
+        enabled: false
+        phase_min: A
+        description: "Mean-reversion theo Bollinger Bands (Phase A+)."
+    right_strategies:
+      enabled: false
+      phase_min: B
+      description: "News/sentiment-driven."
+      news_sentiment: { enabled: false, phase_min: B }
+      social_velocity: { enabled: false, phase_min: B }
+    aggregators:
+      enabled: true
+      left_agg:
+        enabled: false
+        phase_min: A
+        description: "Weighted vote ≤3 chiến lược TA (Phase A+)."
+      right_agg:
+        enabled: false
+        phase_min: B
+        description: "Weighted vote Right strategies (Phase B+)."
+
+  decision:
+    enabled: true
+    decision_maker:
+      enabled: true
+      description: "CORE rules (chưa Meta-Controller)."
+    meta_controller:
+      enabled: false
+      phase_min: A
+      description: "Priority score + ε-greedy bandit."
+      flags:
+        epsilon: { default: 0.08, description: "Xác suất explore." }
+        context_weighting: { default: true, description: "Cân trọng theo regime/vol." }
+        funding_awareness: { default: true, description: "Giảm size khi funding bất lợi." }
+        shadow_trade: { default: true, description: "Luôn chạy shadow cho não không được chọn." }
+    regime_detector:
+      enabled: false
+      phase_min: B
+      description: "Trend/sideway/high-vol."
+    meta_learning:
+      enabled: false
+      phase_min: C
+      description: "Online/Bayesian cập nhật trọng số."
+
+  capital:
+    enabled: true
+    capital_gate:
+      enabled: false
+      phase_min: A
+      description: "Sizing theo Kelly phân đoạn + cap drawdown."
+      flags:
+        kelly_fraction_cap: { default: 0.25, description: "Trần phần Kelly dùng thực tế." }
+        daily_dd_cap: { default: 0.03, description: "Giới hạn DD ngày (3%)." }
+        weekly_dd_cap: { default: 0.08, description: "Giới hạn DD tuần (8%)." }
+    funding_optimizer:
+      enabled: false
+      description: "Lite ở Phase A, full Phase B+."
+      flags:
+        mode: { default: "lite", choices: ["off","lite","full"], description: "Mức tối ưu funding." }
+      phase_min: A
+
+  kpi:
+    enabled: false
+    phase_min: A
+    kpi_tracker:
+      enabled: true
+      description: "Theo dõi KPI tuần/tháng/BIG."
+      flags:
+        reduce_risk_on_hit: { default: true, description: "Đạt KPI → hạ rủi ro." }
+    kpi_adaptive:
+      enabled: false
+      phase_min: C
+      description: "Điều chỉnh mục tiêu KPI động."
+
+  autonomic:
+    enabled: false
+    phase_min: B
+    rhythm_controller:
+      enabled: true
+      description: "Điều phối nhịp quét."
+      flags:
+        fast_mode_volatility_pct: { default: 75, description: "Bật fast scan khi vol% vượt ngưỡng." }
+    recovery_manager:
+      enabled: true
+      description: "Tự khởi động lại module, lưu state."
+
+  execution:
+    enabled: true
+    order_executor: { enabled: true, description: "Đặt lệnh market/limit/oco." }
+    order_monitor:  { enabled: true, description: "Theo dõi filled/partial/canceled." }
+    smart_entry:
+      enabled: false
+      phase_min: B
+      description: "TWAP/VWAP chia nhỏ entry."
+    trailing:
+      enabled: false
+      phase_min: B
+      description: "Trailing stop động."
+    router_multi:
+      enabled: false
+      phase_min: C
+      description: "Định tuyến đa sàn."
+
+  soul:
+    enabled: false
+    phase_min: A
+    soul_manager: { enabled: true, description: "Quản lý sandbox ≤20% vốn." }
+    evolution_diary: { enabled: true, description: "Nhật ký tiến hóa chiến lược." }
+    experiments_runner:
+      enabled: false
+      phase_min: B
+      description: "Chạy thử nghiệm có mục tiêu."
+
+  extend:
+    enabled: false
+    phase_min: B
+    ai_consultant: { enabled: false, phase_min: B, description: "Tư vấn chiến lược từ AI ngoài." }
+    ai_patchmaker: { enabled: false, phase_min: C, description: "Sinh patch chiến lược → sandbox." }
+
+  memory_logging:
+    enabled: true
+    decision_logger: { enabled: true, description: "Ghi tín hiệu & quyết định." }
+    trade_logger:    { enabled: true, description: "Ghi lệnh & PnL." }
+    system_logger:   { enabled: true, description: "CPU/RAM/API health." }
+    performance_tracker:
+      enabled: false
+      phase_min: A
+    feature_store:
+      enabled: false
+      phase_min: B
+
+  reports_dashboard:
+    enabled: true
+    report_daily:   { enabled: true, description: "Báo cáo ngày." }
+    report_weekly:  { enabled: false, phase_min: A }
+    report_monthly: { enabled: false, phase_min: A }
+    dashboard_min:  { enabled: true, description: "Streamlit tối giản (CORE)." }
+    dashboard_full: { enabled: false, phase_min: B, description: "Nhiều tab: Performance/Risk/Sentiment." }
+
+  notifier:
+    enabled: true
+    telegram:
+      enabled: true
+      flags:
+        alerts_trade_filled: { default: true, description: "Thông báo lệnh khớp." }
+        alerts_safety_block: { default: true, description: "Thông báo khi Safety chặn lệnh." }
+        alerts_kpi:          { default: true, description: "Thông báo mốc KPI." }
+        throttle_seconds:    { default: 30, description: "Giảm spam bằng throttle." }
+    notify_report: { enabled: true, description: "Gửi báo cáo ngày/tuần/tháng." }
+
+  deploy:
+    enabled: true
+    blue_green:
+      enabled: true
+      flags:
+        healthcheck_path: { default: "/healthz", description: "Endpoint health cho mỗi service." }
+        shadow_trade_minutes: { default: 20, description: "Thời gian chạy shadow trước khi switch." }
+        require_order_uid: { default: true, description: "Idempotent đặt lệnh." }
+
+rules:
+  # Các ràng buộc giữa cờ để tránh cấu hình sai.
+  requires:
+    - if: "modules.decision.meta_controller.enabled"
+      then: ["modules.risk.safety_layer.enabled", "modules.memory_logging.decision_logger.enabled"]
+    - if: "modules.capital.funding_optimizer.flags.mode == 'full'"
+      then: ["modules.decision.regime_detector.enabled"]
+    - if: "modules.execution.router_multi.enabled"
+      then: ["modules.deploy.blue_green.enabled"]
+  excludes:
+    - any_of: ["modules.dashboard_min.enabled", "modules.dashboard_full.enabled"]
+      note: "Không chạy cả 2 dashboard cùng lúc trên cùng port."
+  safety_fail_closed:
+    - key: "modules.risk.safety_layer"
+      behavior: "block_on_unknown"  # Nếu flag thiếu/không hợp lệ -> chặn lệnh
+
+phase_overrides:
+  CORE:
+    modules:
+      capital:
+        capital_gate: { enabled: false }
+        funding_optimizer:
+          enabled: false
+          flags: { mode: "off" }
+      decision:
+        meta_controller: { enabled: false }
+      kpi: { enabled: false }
+      autonomic: { enabled: false }
+      analyzer:
+        right_strategies: { enabled: false }
+      execution:
+        smart_entry: { enabled: false }
+        trailing: { enabled: false }
+      reports_dashboard:
+        dashboard_full: { enabled: false }
+        dashboard_min:  { enabled: true }
+
+  A:
+    modules:
+      decision:
+        meta_controller: { enabled: true }
+      analyzer:
+        left_strategies:
+          bb_meanreversion: { enabled: true }
+      aggregators:
+        left_agg: { enabled: true }
+      capital:
+        capital_gate: { enabled: true }
+        funding_optimizer:
+          enabled: true
+          flags: { mode: "lite" }
+      kpi:
+        enabled: true
+        kpi_tracker:
+          enabled: true
+
+  B:
+    modules:
+      decision:
+        regime_detector: { enabled: true }
+      analyzer:
+        right_strategies:
+          enabled: true
+          news_sentiment: { enabled: true }
+          social_velocity: { enabled: true }
+      aggregators:
+        right_agg: { enabled: true }
+      collector:
+        macro_collector: { enabled: true }
+        news_collector: { enabled: true }
+        social_collector: { enabled: true }
+        onchain_collector: { enabled: true }
+      execution:
+        smart_entry: { enabled: true }
+        trailing: { enabled: true }
+      autonomic:
+        enabled: true
+        rhythm_controller: { enabled: true }
+        recovery_manager: { enabled: true }
+      reports_dashboard:
+        dashboard_full: { enabled: true }
+        dashboard_min:  { enabled: false }
+      capital:
+        funding_optimizer:
+          flags: { mode: "full" }
+
+  C:
+    modules:
+      decision:
+        meta_learning: { enabled: true }
+      memory_logging:
+        feature_store: { enabled: true }
+      extend:
+        enabled: true
+        ai_consultant: { enabled: true }
+        ai_patchmaker: { enabled: true }
+      kpi:
+        kpi_adaptive: { enabled: true }
+      execution:
+        router_multi: { enabled: true }
+
+examples:
+  # Ví dụ override qua ENV (ưu tiên cao nhất):
+  #   export FEATURE__modules__decision__meta_controller__enabled=true
+  #   export FEATURE__modules__capital__funding_optimizer__flags__mode=full
+  # Ví dụ override qua CLI (tùy loader của bạn):
+  #   --set modules.risk.safety_layer.flags.volatility_gate=false
+  # Ví dụ chọn phase khi chạy:
+  #   --phase B

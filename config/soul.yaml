@@ -1,0 +1,36 @@
+meta:
+  name: "SOUL / Báo cáo"
+  version: "1.7.7"
+  chg_id: "2025-08-17T16:24:08.946034+00:00"
+  description: "Báo cáo Daily/Weekly/Monthly: thân thiện + phần Pro."
+  owners: ["you@example.com"]
+  timezone: "Asia/Bangkok"
+
+schedule:
+  daily:
+    time_local: "22:00"
+    include:
+      - "summary"
+      - "positions"
+      - "risk"
+      - "kpi_week_progress"
+  weekly:
+    weekday: "Sun"
+    time_local: "22:00"
+    include: ["pnl","winrate","best_worst","lessons"]
+  monthly:
+    day: 1
+    time_local: "22:00"
+    include: ["pnl","risk_map","plan_next_month"]
+
+report_style:
+  friendly: true
+  pro_section: true
+  dedupe_minutes: 45
+
+notifications:
+  telegram:
+    chat_ids: ["-1001234567890"]
+    template:
+      header: "📝 Báo cáo {period}"
+      footer: "Nhấn 👍👎 để phản hồi nhanh"

@@ -1,0 +1,40 @@
+meta:
+  name: "CAPITAL_POLICY"
+  version: "1.7.7"
+  chg_id: "2025-08-17T16:24:08.946226+00:00"
+  description: "Quy tắc vốn, KPI, vùng tự do."
+  owners: ["you@example.com"]
+  timezone: "Asia/Bangkok"
+
+risk_limits:
+  max_account_leverage: 5
+  per_trade_risk_pct: 0.5
+  per_day_max_new_capital_usd: 1000
+
+allocations:
+  main_trading_pct: 80
+  free_zone_pct: 20
+  notes: "Free zone được phép tự giao dịch trong sandbox với rủi ro kiểm soát."
+
+symbol_policies:
+  BTCUSDT:
+    max_leverage: 5
+    prefer_mode: "perp"
+  ETHUSDT:
+    max_leverage: 5
+    prefer_mode: "perp"
+
+kpi:
+  weekly:
+    breakeven_usd: 50
+    target_usd: 200
+  monthly:
+    breakeven_usd: 300
+    target_usd: 1000
+  big_kpi:
+    description: "Đạt 1,000,000 USD càng sớm càng tốt."
+    time_bound: "none"
+
+auto_pause:
+  on_dd_pct: 5.0
+  on_abnormal_behavior: true

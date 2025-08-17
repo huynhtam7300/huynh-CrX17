@@ -1,0 +1,24 @@
+meta:
+  name: "MODEL_REGISTRY"
+  version: "1.7.7"
+  chg_id: "fix-2025-08-17"
+  description: "Đăng ký mô hình (FinBERT, LR, Ensemble)."
+  owners: ["you@example.com"]
+
+models:
+  finbert_sentiment:
+    type: "transformers"
+    path: "models/finbert/"
+    cache_ok: true
+    lang: "en"
+
+  signal_lr:
+    type: "sklearn_logistic"
+    path: "models/signal_lr.pkl"
+    features: ["rsi","ema20","macd","funding"]
+
+  ensemble_v1:
+    type: "weighted_blend"
+    path: "models/ensemble_v1.meta"   # <— thêm dòng này để thỏa field required
+    members: ["finbert_sentiment","signal_lr"]
+    weights: [0.4, 0.6]

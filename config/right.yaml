@@ -1,0 +1,40 @@
+meta:
+  name: "RIGHT / NSE"
+  version: "1.7.7"
+  chg_id: "2025-08-17T16:24:08.946007+00:00"
+  description: "Buzz/Lock + xếp hạng nguồn, TTL, hysteresis."
+  owners: ["you@example.com"]
+  timezone: "Asia/Bangkok"
+
+sources:
+  tiers:
+    - name: "T1"
+      weight: 1.0
+      ttl_minutes: 15
+    - name: "T2"
+      weight: 0.6
+      ttl_minutes: 45
+    - name: "T3"
+      weight: 0.3
+      ttl_minutes: 120
+  languages: ["vi","en"]
+  dedupe_minutes: 45
+
+signals:
+  buzz_threshold: 0.6
+  lock_events:
+    - "regulatory_crackdown"
+    - "exchange_outage"
+  hysteresis:
+    up: 0.1
+    down: 0.08
+
+safe_mode:
+  enabled: true
+  block_new_positions: true
+  allow_reduce_only: true
+
+notifications:
+  template:
+    buzz: "🗞️ BUZZ {score} • {title}"
+    lock: "🔒 LOCK {reason} • TTL {ttl}m"

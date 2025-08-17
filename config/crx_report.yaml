@@ -1,0 +1,21 @@
+meta:
+  name: "CRX_REPORT / Template báo cáo"
+  version: "1.7.7"
+  chg_id: "2025-08-17T16:24:08.946154+00:00"
+  description: "Mẫu nội dung và kênh phân phối báo cáo."
+  owners: ["you@example.com"]
+  timezone: "Asia/Bangkok"
+
+channels:
+  telegram: ["-1001234567890"]
+  file_export:
+    enabled: true
+    path: "data/reports"
+
+templates:
+  summary:
+    title: "Tổng quan ngày"
+    sections: ["hiệu_suất","rủi_ro","hành_động"]
+  pro:
+    title: "Phần Phân tích Pro"
+    sections: ["alpha","beta","rủi_ro_vĩ_mô"]

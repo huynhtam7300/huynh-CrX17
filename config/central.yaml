@@ -1,0 +1,47 @@
+meta:
+  name: "Central (Đặc tả trung tâm)"
+  version: "1.7.7"
+  chg_id: "2025-08-17T16:24:08.945886+00:00"
+  description: "Luật tổng hợp quyết định, tie-breaker, bundling thông báo."
+  owners: ["you@example.com"]
+  tags: ["central","policy","tie-break"]
+  timezone: "Asia/Bangkok"
+
+security:
+  cors:
+    allow_origins: ["https://dashboard.example.com"]
+  ip_allowlist: ["127.0.0.1/32"]
+  jwt_ttl_minutes: 30
+
+telemetry:
+  slo:
+    central_p95_ms: 120
+    telegram_p95_ms: 800
+    nse_p95_ms: 1800
+
+decision:
+  min_confidence: 0.55          # ngưỡng tối thiểu để chấp nhận tín hiệu
+  tie_breaker:
+    priority: ["EVENT_LOCK","BUZZ","LEFT","RIGHT"]
+    weight:
+      left: 0.45
+      right: 0.35
+      buzz: 0.2
+  wait_rules:
+    on_rebase_risk: true        # nếu funding/cashflow xấu -> WAIT
+    max_wait_minutes: 30
+
+bundling:
+  enabled: true
+  interval_minutes: 12          # gom thông báo mỗi 10–15’
+  max_events_per_bundle: 30
+  notify_on: ["EXECUTED","ERROR","RISK_ALERT"]
+
+notifications:
+  telegram:
+    chat_ids: ["-1001234567890"]
+    throttle_per_minute: 6
+    template:
+      header: "🧠 CrX Central"
+      footer: "— xem thêm trong Dashboard"
+      show_confetti_on_good: true

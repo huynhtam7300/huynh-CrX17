@@ -1,0 +1,21 @@
+meta:
+  name: "DATASET_REGISTRY"
+  version: "1.7.7"
+  chg_id: "2025-08-17T16:24:08.946178+00:00"
+  description: "Đăng ký tập dữ liệu: thị trường, NSE, macro."
+  owners: ["you@example.com"]
+
+datasets:
+  market_candles:
+    path: "data/btc_candles.json"
+    schema: ["timestamp","open","high","low","close","volume"]
+    retention_days: 60
+    refresh: "15m"
+  nse_events:
+    path: "data/nse_events.json"
+    schema: ["timestamp","title","tier","score","ttl_min"]
+    retention_days: 30
+  macro_events:
+    path: "data/macro_events.json"
+    schema: ["timestamp","source","title","link","published"]
+    retention_days: 90

@@ -37,7 +37,6 @@ except Exception:
     CONFIG = _crx_cfg.CONFIG  # type: ignore
 # -----------------------------------------------------------------------------
 
-
 BINANCE_FUTURES_TESTNET = "https://testnet.binancefuture.com"
 
 API_KEY = os.getenv("BINANCE_API_KEY", "")
@@ -47,12 +46,11 @@ SESSION = requests.Session()
 if API_KEY:
     SESSION.headers.update({"X-MBX-APIKEY": API_KEY})
 
-
 # ---------- ký & gọi API ----------
 def _sign(params: Dict[str, Any]) -> str:
+    from urllib.parse import urlencode
     query = urlencode(params, doseq=True)
     return hmac.new(API_SECRET.encode(), query.encode(), hashlib.sha256).hexdigest()
-
 
 def _get(path: str, params: Dict[str, Any] | None = None, signed: bool = False, timeout: int = 10):
     params = dict(params or {})
@@ -64,9 +62,9 @@ def _get(path: str, params: Dict[str, Any] | None = None, signed: bool = False, 
     r.raise_for_status()
     return r.json()
 
-
 def _post(path: str, params: Dict[str, Any] | None = None, signed: bool = True, timeout: int = 10):
-    params = dict(params or {})
+    params = dict(params or {}
+    )
     if signed:
         params.update({"timestamp": int(time.time() * 1000), "recvWindow": 5000})
         params["signature"] = _sign(params)
@@ -74,7 +72,6 @@ def _post(path: str, params: Dict[str, Any] | None = None, signed: bool = True, 
     r = SESSION.post(url, params=params, timeout=timeout)
     r.raise_for_status()
     return r.json()
-
 
 # ---------- thông tin sàn & tính QTY ----------
 def _get_exchange_info(symbol: str) -> Dict[str, Any]:
@@ -84,17 +81,14 @@ def _get_exchange_info(symbol: str) -> Dict[str, Any]:
         raise ValueError(f"{symbol} không có trên Binance Futures Testnet")
     return syms[symbol]
 
-
 def _get_price(symbol: str) -> float:
     data = _get("/fapi/v1/ticker/price", params={"symbol": symbol}, signed=False)
     return float(data["price"])
-
 
 def _round_step(value: float, step: float) -> float:
     if step <= 0:
         return float(value)
     return float(int(value / step) * step)
-
 
 def _qty_filters(info: Dict[str, Any]) -> Tuple[float, float]:
     step, min_qty = 0.001, 0.001
@@ -104,13 +98,11 @@ def _qty_filters(info: Dict[str, Any]) -> Tuple[float, float]:
             min_qty = float(f.get("minQty", min_qty))
     return step, min_qty
 
-
 def _ensure_leverage(symbol: str, leverage: int) -> None:
     try:
         _post("/fapi/v1/leverage", params={"symbol": symbol, "leverage": leverage}, signed=True)
     except Exception as e:
         print("[executor] leverage set warn:", e)
-
 
 def _compute_qty(symbol: str, notional_usdt: float) -> float:
     price = _get_price(symbol)
@@ -121,7 +113,6 @@ def _compute_qty(symbol: str, notional_usdt: float) -> float:
     if qty < min_qty:
         qty = min_qty
     return float(qty)
-
 
 # ---------- đặt lệnh MARKET ----------
 def place_order(
@@ -145,7 +136,6 @@ def place_order(
             pass
         return {"order_uid": uid, "status": "SIMULATED", "client_order_id": uid}
 
-    # Lấy notional mặc định từ CONFIG nếu không truyền vào
     if notional_usdt is None:
         try:
             notional_usdt = float(
@@ -188,7 +178,6 @@ def place_order(
         "avgPrice": resp.get("avgPrice", "0"),
     }
 
-
 # ================== ENTRYPOINT cho runner ==================
 _STATE_FILE = root / "executor_state.json"
 
@@ -204,8 +193,7 @@ def _save_state(st: Dict[str, Any]) -> None:
     except Exception:
         pass
 
-def _read_last_decision() -> Optional[Dict[str, Any]]:
-    # Thử lần lượt các vị trí phổ biến
+def _read_last_decision_file() -> Optional[Dict[str, Any]]:
     candidates = [
         root / "last_decision.json",
         root / "data" / "last_decision.json",
@@ -219,8 +207,37 @@ def _read_last_decision() -> Optional[Dict[str, Any]]:
                 pass
     return None
 
+def _read_last_decision_from_log() -> Optional[Dict[str, Any]]:
+    """Fallback: parse dòng '[decision] record: {...}' gần nhất trong logs/runner.log"""
+    log_path = root / "logs" / "runner.log"
+    try:
+        with log_path.open("r", encoding="utf-8", errors="ignore") as f:
+            lines = f.readlines()[-600:]  # đọc ~600 dòng cuối
+        for line in reversed(lines):
+            key = "[decision] record:"
+            pos = line.find(key)
+            if pos != -1:
+                jstart = line.find("{", pos)
+                if jstart != -1:
+                    js = line[jstart:].strip()
+                    try:
+                        return json.loads(js)
+                    except Exception:
+                        continue
+    except Exception:
+        pass
+    return None
+
+def _read_last_decision() -> Optional[Dict[str, Any]]:
+    dec = _read_last_decision_file()
+    if dec:
+        return dec
+    dec = _read_last_decision_from_log()
+    if dec:
+        print("[executor] picked decision from log")
+    return dec
+
 def _guess_symbol() -> str:
-    # Ưu tiên đọc từ CONFIG nếu có, fallback BTCUSDT
     try:
         cen = CONFIG.get("central", {})  # type: ignore
         syms = cen.get("symbols") or cen.get("universe") or []
@@ -231,7 +248,7 @@ def _guess_symbol() -> str:
     return "BTCUSDT"
 
 def run() -> None:
-    # Chỉ chạy khi được bật explicit
+    # Bật/tắt qua env
     if str(os.getenv("CRX_ENABLE_ORDER_EXECUTOR", "")).lower() not in ("1", "true", "yes"):
         print("[executor] disabled by env CRX_ENABLE_ORDER_EXECUTOR")
         return
@@ -241,20 +258,17 @@ def run() -> None:
         print("[executor] no decision file found")
         return
 
-    # Lấy side từ meta_action hoặc decision
     side = (dec.get("meta_action") or dec.get("decision") or "").upper()
     if side not in ("BUY", "SELL"):
         print("[executor] no actionable side in decision")
         return
 
-    # Dedup theo timestamp để tránh bắn lặp lại
     ts = dec.get("timestamp") or dec.get("ts")
     st = _load_state()
     if ts and st.get("last_ts") == ts:
         print("[executor] skip duplicate decision ts=", ts)
         return
 
-    # Kiểm ngưỡng độ tự tin
     try:
         conf = float(dec.get("confidence", 0.0))
     except Exception:
@@ -267,7 +281,6 @@ def run() -> None:
         print(f"[executor] skip: confidence {conf} < min {min_conf}")
         return
 
-    # Tham số đặt lệnh
     symbol = dec.get("symbol") or _guess_symbol()
     size_pct = float(dec.get("suggested_size", 0.2))
     try:
@@ -277,14 +290,11 @@ def run() -> None:
     except Exception:
         notional = 50.0
 
-    # Đặt lệnh
     res = place_order(symbol=symbol, side=side, size_pct=size_pct, leverage=1, notional_usdt=notional)
 
-    # Lưu state để chống bắn trùng
     st["last_ts"] = ts
     st["last_order"] = {"symbol": symbol, "side": side, "result": res}
     _save_state(st)
-
 
 if __name__ == "__main__":
     run()

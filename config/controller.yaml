@@ -8,7 +8,7 @@ meta:
 
 routing:
   allowed_routes: ["LEFT","RIGHT","WAIT"]
-  default_route: "WAIT"
+  default_route: "LEFT"
   cooldown_switch_seconds: 180
   max_route_flips_per_hour: 6
   inherit_safe_mode_from_right: false

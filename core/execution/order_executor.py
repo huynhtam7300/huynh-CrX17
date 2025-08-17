@@ -4,8 +4,9 @@ from __future__ import annotations
 import os
 import time
 import hmac
+import json
 import hashlib
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 from urllib.parse import urlencode
 
 import requests
@@ -14,9 +15,7 @@ from notifier.notify_telegram import send_telegram_message
 from utils.uid import new_order_uid
 
 # -----------------------------------------------------------------------------
-# Nạp CONFIG bền vững:
-# - Ưu tiên import dạng package: from config.config import CONFIG
-# - Nếu môi trường che khuất package 'config', fallback import theo file path
+# Nạp CONFIG bền vững (package-first, path fallback)
 # -----------------------------------------------------------------------------
 import sys
 import pathlib
@@ -27,10 +26,8 @@ if str(root) not in sys.path:
     sys.path.insert(0, str(root))
 
 try:
-    # Ưu tiên import như package (service đã có PYTHONPATH trỏ về repo root)
     from config.config import CONFIG  # type: ignore
 except Exception:
-    # Fallback: ép load theo đường dẫn file để tránh xung đột module 'config' bên ngoài
     cfg_path = (root / "config" / "config.py").resolve()
     spec = importlib.util.spec_from_file_location("crx_config", str(cfg_path))
     _crx_cfg = importlib.util.module_from_spec(spec)
@@ -137,26 +134,19 @@ def place_order(
     """
     Đặt MARKET trên Binance Futures Testnet.
     Nếu thiếu API key/secret -> chạy mô phỏng (SIMULATED).
-    - symbol: ví dụ 'BTCUSDT'
-    - side: 'BUY' hoặc 'SELL'
-    - size_pct: % sizing do hệ thống quyết định (hiện dùng cho log)
-    - leverage: đòn bẩy mong muốn
-    - notional_usdt: giá trị danh nghĩa; nếu None sẽ lấy từ CONFIG hoặc default=50
     """
-    # Không có API -> mô phỏng
     if not API_KEY or not API_SECRET:
         uid = new_order_uid()
         msg = f"🟢 EXECUTE {side} {symbol} (SIM) size={size_pct:.2f}% lev={leverage} uid={uid}"
         print(msg)
         try:
             send_telegram_message(msg)
-        except Exception as _:
+        except Exception:
             pass
         return {"order_uid": uid, "status": "SIMULATED", "client_order_id": uid}
 
     # Lấy notional mặc định từ CONFIG nếu không truyền vào
     if notional_usdt is None:
-        # ưu tiên executor.order_policy.default_order.notional_usdt nếu có
         try:
             notional_usdt = float(
                 CONFIG["executor"]["order_policy"].get("default_order", {}).get("notional_usdt", 50)
@@ -164,13 +154,9 @@ def place_order(
         except Exception:
             notional_usdt = float(CONFIG.get("default_order", {}).get("notional_usdt", 50))
 
-    # Cố gắng set leverage (nếu API cho phép)
     _ensure_leverage(symbol, leverage)
-
-    # Tính qty từ notional & filter
     qty = _compute_qty(symbol, float(notional_usdt))
 
-    # Gửi lệnh MARKET
     params = {"symbol": symbol, "side": side, "type": "MARKET", "quantity": f"{qty:.8f}"}
     try:
         resp = _post("/fapi/v1/order", params=params, signed=True)
@@ -201,3 +187,104 @@ def place_order(
         "cumQty": resp.get("executedQty", "0"),
         "avgPrice": resp.get("avgPrice", "0"),
     }
+
+
+# ================== ENTRYPOINT cho runner ==================
+_STATE_FILE = root / "executor_state.json"
+
+def _load_state() -> Dict[str, Any]:
+    try:
+        return json.loads(_STATE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+def _save_state(st: Dict[str, Any]) -> None:
+    try:
+        _STATE_FILE.write_text(json.dumps(st, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+def _read_last_decision() -> Optional[Dict[str, Any]]:
+    # Thử lần lượt các vị trí phổ biến
+    candidates = [
+        root / "last_decision.json",
+        root / "data" / "last_decision.json",
+        root / "data" / "decision_latest.json",
+    ]
+    for p in candidates:
+        if p.exists():
+            try:
+                return json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+    return None
+
+def _guess_symbol() -> str:
+    # Ưu tiên đọc từ CONFIG nếu có, fallback BTCUSDT
+    try:
+        cen = CONFIG.get("central", {})  # type: ignore
+        syms = cen.get("symbols") or cen.get("universe") or []
+        if isinstance(syms, list) and syms:
+            return str(syms[0])
+    except Exception:
+        pass
+    return "BTCUSDT"
+
+def run() -> None:
+    # Chỉ chạy khi được bật explicit
+    if str(os.getenv("CRX_ENABLE_ORDER_EXECUTOR", "")).lower() not in ("1", "true", "yes"):
+        print("[executor] disabled by env CRX_ENABLE_ORDER_EXECUTOR")
+        return
+
+    dec = _read_last_decision()
+    if not dec:
+        print("[executor] no decision file found")
+        return
+
+    # Lấy side từ meta_action hoặc decision
+    side = (dec.get("meta_action") or dec.get("decision") or "").upper()
+    if side not in ("BUY", "SELL"):
+        print("[executor] no actionable side in decision")
+        return
+
+    # Dedup theo timestamp để tránh bắn lặp lại
+    ts = dec.get("timestamp") or dec.get("ts")
+    st = _load_state()
+    if ts and st.get("last_ts") == ts:
+        print("[executor] skip duplicate decision ts=", ts)
+        return
+
+    # Kiểm ngưỡng độ tự tin
+    try:
+        conf = float(dec.get("confidence", 0.0))
+    except Exception:
+        conf = 0.0
+    try:
+        min_conf = float(CONFIG.get("central", {}).get("min_confidence", 0.5))  # type: ignore
+    except Exception:
+        min_conf = 0.5
+    if conf < min_conf:
+        print(f"[executor] skip: confidence {conf} < min {min_conf}")
+        return
+
+    # Tham số đặt lệnh
+    symbol = dec.get("symbol") or _guess_symbol()
+    size_pct = float(dec.get("suggested_size", 0.2))
+    try:
+        notional = float(
+            CONFIG["executor"]["order_policy"].get("default_order", {}).get("notional_usdt", 50)
+        )
+    except Exception:
+        notional = 50.0
+
+    # Đặt lệnh
+    res = place_order(symbol=symbol, side=side, size_pct=size_pct, leverage=1, notional_usdt=notional)
+
+    # Lưu state để chống bắn trùng
+    st["last_ts"] = ts
+    st["last_order"] = {"symbol": symbol, "side": side, "result": res}
+    _save_state(st)
+
+
+if __name__ == "__main__":
+    run()

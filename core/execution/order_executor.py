@@ -10,7 +10,19 @@ import requests
 
 from notifier.notify_telegram import send_telegram_message
 from utils.uid import new_order_uid
-from configs.config import CONFIG
+# ép thêm repo root vào sys.path khi file này được import trực tiếp
+import sys, pathlib
+root = pathlib.Path(__file__).resolve().parents[2]
+if str(root) not in sys.path: sys.path.insert(0, str(root))
+
+# --- Force-load CONFIG từ file path, tránh xung đột module tên 'config' ngoài hệ thống ---
+import importlib.util
+cfg_path = (root / "config" / "config.py").resolve()
+spec = importlib.util.spec_from_file_location("crx_config", str(cfg_path))
+_crx_cfg = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(_crx_cfg)  # type: ignore
+CONFIG = _crx_cfg.CONFIG
+# -----------------------------------------------------------------------------------------
 
 BINANCE_FUTURES_TESTNET = "https://testnet.binancefuture.com"
 

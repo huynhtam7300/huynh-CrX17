@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # core/execution/order_executor.py
 from __future__ import annotations
 
@@ -8,47 +9,35 @@ import json
 import hashlib
 from typing import Dict, Any, Tuple, Optional
 from urllib.parse import urlencode
+from pathlib import Path
 
 import requests
 
-from notifier.notify_telegram import send_telegram_message
-from utils.uid import new_order_uid
+# ===== PATHS =====
+ROOT = Path(__file__).resolve().parents[2]  # .../CrX17
+DATA_DIR = ROOT / "data"
+CONF_DIR = ROOT / "config"
+LOGS_DIR = ROOT / "logs"
 
-# -----------------------------------------------------------------------------
-# Nạp CONFIG bền vững (package-first, path fallback)
-# -----------------------------------------------------------------------------
-import sys
-import pathlib
-import importlib.util
-
-root = pathlib.Path(__file__).resolve().parents[2]  # .../CrX17
-if str(root) not in sys.path:
-    sys.path.insert(0, str(root))
-
-try:
-    from config.config import CONFIG  # type: ignore
-except Exception:
-    cfg_path = (root / "config" / "config.py").resolve()
-    spec = importlib.util.spec_from_file_location("crx_config", str(cfg_path))
-    _crx_cfg = importlib.util.module_from_spec(spec)
-    if not spec or not spec.loader:
-        raise RuntimeError("Không thể tạo spec cho config/config.py")
-    spec.loader.exec_module(_crx_cfg)  # type: ignore
-    CONFIG = _crx_cfg.CONFIG  # type: ignore
-# -----------------------------------------------------------------------------
-
-BINANCE_FUTURES_TESTNET = "https://testnet.binancefuture.com"
-
+# ===== ENV / API =====
+BINANCE_FUTURES_BASE = os.getenv("BINANCE_BASE_URL", "https://testnet.binancefuture.com")
 API_KEY = os.getenv("BINANCE_API_KEY", "")
 API_SECRET = os.getenv("BINANCE_API_SECRET", "")
-
 SESSION = requests.Session()
 if API_KEY:
     SESSION.headers.update({"X-MBX-APIKEY": API_KEY})
 
-# ---------- ký & gọi API ----------
+# ===== Optional notifier =====
+def _notify(msg: str) -> None:
+    print(msg)
+    try:
+        from notifier.notify_telegram import send_telegram_message  # type: ignore
+        send_telegram_message(msg)
+    except Exception:
+        pass
+
+# ===== HTTP helpers =====
 def _sign(params: Dict[str, Any]) -> str:
-    from urllib.parse import urlencode
     query = urlencode(params, doseq=True)
     return hmac.new(API_SECRET.encode(), query.encode(), hashlib.sha256).hexdigest()
 
@@ -57,28 +46,27 @@ def _get(path: str, params: Dict[str, Any] | None = None, signed: bool = False, 
     if signed:
         params.update({"timestamp": int(time.time() * 1000), "recvWindow": 5000})
         params["signature"] = _sign(params)
-    url = BINANCE_FUTURES_TESTNET + path
+    url = BINANCE_FUTURES_BASE + path
     r = SESSION.get(url, params=params, timeout=timeout)
     r.raise_for_status()
     return r.json()
 
 def _post(path: str, params: Dict[str, Any] | None = None, signed: bool = True, timeout: int = 10):
-    params = dict(params or {}
-    )
+    params = dict(params or {})
     if signed:
         params.update({"timestamp": int(time.time() * 1000), "recvWindow": 5000})
         params["signature"] = _sign(params)
-    url = BINANCE_FUTURES_TESTNET + path
+    url = BINANCE_FUTURES_BASE + path
     r = SESSION.post(url, params=params, timeout=timeout)
     r.raise_for_status()
     return r.json()
 
-# ---------- thông tin sàn & tính QTY ----------
+# ===== Exchange info / qty =====
 def _get_exchange_info(symbol: str) -> Dict[str, Any]:
     data = _get("/fapi/v1/exchangeInfo", signed=False)
     syms = {s["symbol"]: s for s in data.get("symbols", [])}
     if symbol not in syms:
-        raise ValueError(f"{symbol} không có trên Binance Futures Testnet")
+        raise ValueError(f"{symbol} không có trên Binance Futures")
     return syms[symbol]
 
 def _get_price(symbol: str) -> float:
@@ -114,35 +102,192 @@ def _compute_qty(symbol: str, notional_usdt: float) -> float:
         qty = min_qty
     return float(qty)
 
-# ---------- đặt lệnh MARKET ----------
-def place_order(
-    symbol: str,
-    side: str,
-    size_pct: float,
-    leverage: int = 1,
-    notional_usdt: float | None = None
-):
+# ===== JSON/YAML utils =====
+def _read_json(path: Path, default=None):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return default
+
+def _read_last_decision() -> Optional[Dict[str, Any]]:
     """
-    Đặt MARKET trên Binance Futures Testnet.
-    Nếu thiếu API key/secret -> chạy mô phỏng (SIMULATED).
+    Ưu tiên đọc data/decision_history.json (mảng hoặc mỗi dòng một JSON).
+    Fallback: data/last_decision.json, last_decision.json, data/decision_latest.json.
+    Cuối cùng: parse logs/runner.log dòng '[decision] record: {...}'.
     """
-    if not API_KEY or not API_SECRET:
-        uid = new_order_uid()
-        msg = f"🟢 EXECUTE {side} {symbol} (SIM) size={size_pct:.2f}% lev={leverage} uid={uid}"
-        print(msg)
+    # history
+    hist_path = DATA_DIR / "decision_history.json"
+    if hist_path.exists():
         try:
-            send_telegram_message(msg)
+            txt = hist_path.read_text(encoding="utf-8").strip()
+            if txt:
+                if txt.lstrip().startswith("["):
+                    arr = json.loads(txt)
+                    if isinstance(arr, list) and arr:
+                        return arr[-1]
+                else:
+                    # lấy dòng JSON cuối
+                    lines = [ln for ln in txt.splitlines() if ln.strip()]
+                    if lines:
+                        return json.loads(lines[-1])
         except Exception:
             pass
+    # fallbacks
+    for p in [DATA_DIR / "last_decision.json", ROOT / "last_decision.json", DATA_DIR / "decision_latest.json"]:
+        obj = _read_json(p, default=None)
+        if isinstance(obj, dict) and obj:
+            return obj
+    # parse log
+    log_path = LOGS_DIR / "runner.log"
+    try:
+        with log_path.open("r", encoding="utf-8", errors="ignore") as f:
+            lines = f.readlines()[-800:]
+        for line in reversed(lines):
+            key = "[decision] record:"
+            pos = line.find(key)
+            if pos != -1:
+                jstart = line.find("{", pos)
+                if jstart != -1:
+                    try:
+                        return json.loads(line[jstart:].strip())
+                    except Exception:
+                        continue
+    except Exception:
+        pass
+    return None
+
+def _read_meta_route() -> str:
+    st = _read_json(DATA_DIR / "meta_state.json", default={}) or {}
+    return str(st.get("current_route") or "LEFT").upper()
+
+def _left_conf_floor() -> float:
+    try:
+        import yaml
+        cfg = yaml.safe_load((CONF_DIR / "left.yaml").read_text(encoding="utf-8")) or {}
+        return float(cfg.get("signal_confidence_floor")
+                     or (cfg.get("left_policy") or {}).get("signal_confidence_floor")
+                     or 0.65)
+    except Exception:
+        return 0.65
+
+def _get_notional_default() -> float:
+    try:
+        import yaml
+        ex = yaml.safe_load((CONF_DIR / "executor.yaml").read_text(encoding="utf-8")) or {}
+        return float((ex.get("order_policy") or {}).get("default_order", {}).get("notional_usdt", 50))
+    except Exception:
+        return 50.0
+
+def _get_brackets_cfg() -> Tuple[float, float, str]:
+    """
+    Đọc sl/tp từ config/executor.yaml (nếu có).
+    Trả về: (sl_pct, tp_pct, working_type)
+    """
+    try:
+        import yaml
+        ex = yaml.safe_load((CONF_DIR / "executor.yaml").read_text(encoding="utf-8")) or {}
+        pol = (ex.get("order_policy") or {})
+        slp = float(pol.get("sl_pct", 0) or 0)
+        tpp = float(pol.get("tp_pct", 0) or 0)
+        wkt = str(pol.get("working_type", "MARK_PRICE")).upper()
+        if wkt not in ("MARK_PRICE", "CONTRACT_PRICE", "LAST_PRICE"):
+            wkt = "MARK_PRICE"
+        return slp, tpp, wkt
+    except Exception:
+        return 0.0, 0.0, "MARK_PRICE"
+
+# ===== Position helpers =====
+def _get_position(symbol: str) -> Tuple[float, float]:
+    """
+    Trả về (positionAmt, entryPrice).
+    Dương = long, âm = short; 0 = không có vị thế.
+    """
+    try:
+        arr = _get("/fapi/v2/positionRisk", params={"symbol": symbol}, signed=True)
+        items = arr if isinstance(arr, list) else [arr]
+        for it in items:
+            if str(it.get("symbol")) == symbol:
+                amt = float(it.get("positionAmt", 0) or 0)
+                entry = float(it.get("entryPrice", 0) or 0)
+                return amt, entry
+    except Exception:
+        pass
+    return 0.0, 0.0
+
+def close_position(symbol: str) -> Dict[str, Any]:
+    """
+    Đóng toàn bộ vị thế hiện tại bằng lệnh MARKET reduceOnly.
+    """
+    pos_amt, _ = _get_position(symbol)
+    if abs(pos_amt) < 1e-12:
+        print("[executor] close_position: no position")
+        return {"status": "NO_POSITION"}
+
+    side = "SELL" if pos_amt > 0 else "BUY"
+    qty = abs(pos_amt)
+    try:
+        resp = _post("/fapi/v1/order",
+                     params={"symbol": symbol, "side": side, "type": "MARKET",
+                             "quantity": f"{qty:.8f}", "reduceOnly": "true"},
+                     signed=True)
+        _notify(f"🧹 CLOSE {symbol} qty={qty:.8f} side={side} (reduceOnly)")
+        return {"status": "OK", "resp": resp}
+    except Exception as e:
+        print("[executor] close_position error:", e)
+        _notify(f"🔴 CLOSE FAIL {symbol} qty={qty:.8f} side={side} err={e}")
+        return {"status": "ERROR", "error": str(e)}
+
+def _set_brackets(symbol: str, sl_pct: float, tp_pct: float, working_type: str = "MARK_PRICE") -> Optional[Dict[str, Any]]:
+    """
+    Đặt TP/SL trên sàn bằng STOP_MARKET/TAKE_PROFIT_MARKET closePosition=true.
+    Cần có vị thế (đã khớp) để lấy entryPrice.
+    """
+    if sl_pct <= 0 and tp_pct <= 0:
+        return None
+
+    pos_amt, entry = _get_position(symbol)
+    if abs(pos_amt) < 1e-12 or entry <= 0:
+        return None
+
+    long = pos_amt > 0
+    sl = entry * (1 - sl_pct) if long else entry * (1 + sl_pct)
+    tp = entry * (1 + tp_pct) if long else entry * (1 - tp_pct)
+
+    out = {}
+    try:
+        # SL
+        if sl_pct > 0:
+            out["sl"] = _post("/fapi/v1/order",
+                              params={"symbol": symbol, "side": "SELL" if long else "BUY",
+                                      "type": "STOP_MARKET", "stopPrice": f"{sl:.2f}",
+                                      "closePosition": "true", "workingType": working_type},
+                              signed=True)
+        # TP
+        if tp_pct > 0:
+            out["tp"] = _post("/fapi/v1/order",
+                              params={"symbol": symbol, "side": "SELL" if long else "BUY",
+                                      "type": "TAKE_PROFIT_MARKET", "stopPrice": f"{tp:.2f}",
+                                      "closePosition": "true", "workingType": working_type},
+                              signed=True)
+        _notify(f"🧷 Brackets set {symbol}: SL@{sl:.2f} TP@{tp:.2f} (mode={working_type})")
+    except Exception as e:
+        _notify(f"🔴 Brackets fail {symbol}: {e}")
+    return out
+
+# ===== Place order =====
+def place_order(symbol: str, side: str, size_pct: float, leverage: int = 1, notional_usdt: float | None = None):
+    """
+    Đặt MARKET trên Binance Futures.
+    Nếu thiếu API key/secret -> chạy mô phỏng (SIMULATED).
+    """
+    # SIM mode
+    if not API_KEY or not API_SECRET:
+        uid = f"SIM-{int(time.time())}"
+        _notify(f"🟢 EXECUTE {side} {symbol} (SIM) size={size_pct:.2f}% lev={leverage} uid={uid}")
         return {"order_uid": uid, "status": "SIMULATED", "client_order_id": uid}
 
     if notional_usdt is None:
-        try:
-            notional_usdt = float(
-                CONFIG["executor"]["order_policy"].get("default_order", {}).get("notional_usdt", 50)
-            )
-        except Exception:
-            notional_usdt = float(CONFIG.get("default_order", {}).get("notional_usdt", 50))
+        notional_usdt = _get_notional_default()
 
     _ensure_leverage(symbol, leverage)
     qty = _compute_qty(symbol, float(notional_usdt))
@@ -151,95 +296,39 @@ def place_order(
     try:
         resp = _post("/fapi/v1/order", params=params, signed=True)
     except Exception as e:
-        uid = new_order_uid()
-        msg = f"🔴 EXECUTE FAIL {side} {symbol} QTY={qty} (~{notional_usdt} USDT) lev={leverage} uid={uid} err={e}"
-        print(msg)
-        try:
-            send_telegram_message(msg)
-        except Exception:
-            pass
+        uid = f"ERR-{int(time.time())}"
+        _notify(f"🔴 EXECUTE FAIL {side} {symbol} QTY={qty} (~{notional_usdt} USDT) lev={leverage} uid={uid} err={e}")
         return {"order_uid": uid, "status": "ERROR", "error": str(e)}
 
-    uid_client = resp.get("clientOrderId") or new_order_uid()
-    order_id = resp.get("orderId")
-    msg = f"🟢 EXECUTE {side} {symbol} QTY={qty} (~{notional_usdt} USDT) lev={leverage} uid={uid_client}"
-    print(msg)
-    try:
-        send_telegram_message(msg)
-    except Exception:
-        pass
-
+    uid_client = resp.get("clientOrderId") or f"CID-{int(time.time())}"
+    _notify(f"🟢 EXECUTE {side} {symbol} QTY={qty} (~{notional_usdt} USDT) lev={leverage} uid={uid_client}")
     return {
         "order_uid": uid_client,
         "client_order_id": uid_client,
-        "order_id": order_id,
+        "order_id": resp.get("orderId"),
         "status": resp.get("status", "NEW"),
         "cumQty": resp.get("executedQty", "0"),
         "avgPrice": resp.get("avgPrice", "0"),
     }
 
-# ================== ENTRYPOINT cho runner ==================
-_STATE_FILE = root / "executor_state.json"
+# ===== ENTRYPOINT =====
+_STATE_FILE = DATA_DIR / "executor_state.json"
 
 def _load_state() -> Dict[str, Any]:
-    try:
-        return json.loads(_STATE_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    return _read_json(_STATE_FILE, default={}) or {}
 
 def _save_state(st: Dict[str, Any]) -> None:
     try:
+        _STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
         _STATE_FILE.write_text(json.dumps(st, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception:
         pass
 
-def _read_last_decision_file() -> Optional[Dict[str, Any]]:
-    candidates = [
-        root / "last_decision.json",
-        root / "data" / "last_decision.json",
-        root / "data" / "decision_latest.json",
-    ]
-    for p in candidates:
-        if p.exists():
-            try:
-                return json.loads(p.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-    return None
-
-def _read_last_decision_from_log() -> Optional[Dict[str, Any]]:
-    """Fallback: parse dòng '[decision] record: {...}' gần nhất trong logs/runner.log"""
-    log_path = root / "logs" / "runner.log"
-    try:
-        with log_path.open("r", encoding="utf-8", errors="ignore") as f:
-            lines = f.readlines()[-600:]  # đọc ~600 dòng cuối
-        for line in reversed(lines):
-            key = "[decision] record:"
-            pos = line.find(key)
-            if pos != -1:
-                jstart = line.find("{", pos)
-                if jstart != -1:
-                    js = line[jstart:].strip()
-                    try:
-                        return json.loads(js)
-                    except Exception:
-                        continue
-    except Exception:
-        pass
-    return None
-
-def _read_last_decision() -> Optional[Dict[str, Any]]:
-    dec = _read_last_decision_file()
-    if dec:
-        return dec
-    dec = _read_last_decision_from_log()
-    if dec:
-        print("[executor] picked decision from log")
-    return dec
-
 def _guess_symbol() -> str:
+    # Ưu tiên central.yaml
     try:
-        cen = CONFIG.get("central", {})  # type: ignore
+        import yaml
+        cen = yaml.safe_load((CONF_DIR / "central.yaml").read_text(encoding="utf-8")) or {}
         syms = cen.get("symbols") or cen.get("universe") or []
         if isinstance(syms, list) and syms:
             return str(syms[0])
@@ -253,47 +342,69 @@ def run() -> None:
         print("[executor] disabled by env CRX_ENABLE_ORDER_EXECUTOR")
         return
 
+    # Gate theo Meta-Controller (Phase B chỉ cho LEFT hoạt động)
+    route = _read_meta_route()
+    if route != "LEFT":
+        print(f"[executor] skip: route={route} (Phase B chỉ thực thi khi route=LEFT)")
+        return
+
     dec = _read_last_decision()
     if not dec:
-        print("[executor] no decision file found")
+        print("[executor] no decision found")
         return
 
-    side = (dec.get("meta_action") or dec.get("decision") or "").upper()
-    if side not in ("BUY", "SELL"):
-        print("[executor] no actionable side in decision")
+    # Hỗ trợ meta_action=CLOSE để chốt vị thế
+    base_decision = (dec.get("decision") or "").upper()
+    meta_action = (dec.get("meta_action") or base_decision).upper()
+
+    if meta_action == "CLOSE":
+        symbol = dec.get("symbol") or _guess_symbol()
+        close_position(symbol)
+        st = _load_state()
+        st["last_ts"] = dec.get("timestamp") or dec.get("ts") or time.time()
+        st["last_order"] = {"symbol": symbol, "side": "CLOSE", "result": {"status": "OK"}}
+        _save_state(st)
         return
 
-    ts = dec.get("timestamp") or dec.get("ts")
+    if meta_action not in ("BUY", "SELL"):
+        print("[executor] no actionable side in decision (need BUY/SELL/CLOSE)")
+        return
+
+    # tránh trùng theo timestamp
+    ts_value = dec.get("timestamp") or dec.get("ts")
     st = _load_state()
-    if ts and st.get("last_ts") == ts:
-        print("[executor] skip duplicate decision ts=", ts)
+    if ts_value and st.get("last_ts") == ts_value:
+        print("[executor] skip duplicate decision ts=", ts_value)
         return
 
+    # ngưỡng tin cậy
     try:
         conf = float(dec.get("confidence", 0.0))
     except Exception:
         conf = 0.0
-    try:
-        min_conf = float(CONFIG.get("central", {}).get("min_confidence", 0.5))  # type: ignore
-    except Exception:
-        min_conf = 0.5
-    if conf < min_conf:
-        print(f"[executor] skip: confidence {conf} < min {min_conf}")
+    floor = _left_conf_floor()
+    if conf < floor:
+        print(f"[executor] skip: confidence {conf:.2f} < floor {floor:.2f}")
         return
 
     symbol = dec.get("symbol") or _guess_symbol()
     size_pct = float(dec.get("suggested_size", 0.2))
-    try:
-        notional = float(
-            CONFIG["executor"]["order_policy"].get("default_order", {}).get("notional_usdt", 50)
-        )
-    except Exception:
-        notional = 50.0
+    notional = _get_notional_default()
 
-    res = place_order(symbol=symbol, side=side, size_pct=size_pct, leverage=1, notional_usdt=notional)
+    # Đặt lệnh
+    res = place_order(symbol=symbol, side=meta_action, size_pct=size_pct, leverage=1, notional_usdt=notional)
 
-    st["last_ts"] = ts
-    st["last_order"] = {"symbol": symbol, "side": side, "result": res}
+    # Đặt brackets nếu có trong config
+    sl_pct, tp_pct, wtype = _get_brackets_cfg()
+    if (sl_pct > 0) or (tp_pct > 0):
+        try:
+            _set_brackets(symbol, sl_pct=sl_pct, tp_pct=tp_pct, working_type=wtype)
+        except Exception as e:
+            print("[executor] bracket warn:", e)
+
+    # Lưu trạng thái
+    st["last_ts"] = ts_value or time.time()
+    st["last_order"] = {"symbol": symbol, "side": meta_action, "result": res}
     _save_state(st)
 
 if __name__ == "__main__":

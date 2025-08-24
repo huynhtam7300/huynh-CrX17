@@ -51,5 +51,3 @@ def main():
 if __name__ == "__main__":
     main()
 PY
-
-chmod +x tools/append_latest_and_export.py

@@ -10,14 +10,14 @@ L = pathlib.Path('data/decision_latest.json')
 def read_last_object():
     raw = H.read_text(encoding='utf-8') if H.exists() else ''
     last = None
-    # (1) Thử parse cả file là JSON list
+    # (1) thử parse cả file là JSON list
     try:
         j = json.loads(raw)
         if isinstance(j, list) and j:
             last = j[-1]
     except Exception:
         pass
-    # (2) Nếu thất bại, duyệt từng dòng (JSON-lines hoặc mixed)
+    # (2) nếu thất bại, duyệt JSON-lines/mixed
     if last is None:
         lines = [ln for ln in raw.splitlines() if ln.strip()]
         for ln in reversed(lines):

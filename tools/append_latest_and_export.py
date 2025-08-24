@@ -1,6 +1,7 @@
 cd /home/crx/CrX17
+
 cat > tools/append_latest_and_export.py <<'PY'
-import json, pathlib, sys
+import json, pathlib
 
 H = pathlib.Path('data/decision_history.json')
 J = pathlib.Path('data/decision_history.jsonl')
@@ -45,13 +46,10 @@ def main():
         f.write(json.dumps(last, ensure_ascii=False) + '\n')
     # export latest (atomic)
     atomic_write(L, json.dumps(last, ensure_ascii=False))
-    print("[sync] latest:", last.get("timestamp"), last.get("decision"), last.get("confidence"))
+    print(f"[sync] latest: {last.get('timestamp')} {last.get('decision')} {last.get('confidence')}")
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        print("[sync] ERROR:", e, file=sys.stderr)
-        raise
+    main()
 PY
+
 chmod +x tools/append_latest_and_export.py

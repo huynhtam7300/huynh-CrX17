@@ -126,7 +126,6 @@ def _read_last_decision() -> Optional[Dict[str, Any]]:
                     if isinstance(arr, list) and arr:
                         return arr[-1]
                 else:
-                    # lấy dòng JSON cuối
                     lines = [ln for ln in txt.splitlines() if ln.strip()]
                     if lines:
                         return json.loads(lines[-1])
@@ -398,7 +397,7 @@ def run() -> None:
     sl_pct, tp_pct, wtype = _get_brackets_cfg()
     if (sl_pct > 0) or (tp_pct > 0):
         try:
-            _set_brackets(symbol, sl_pct=sl_pct, tp_pct=tp_pct, working_type=wtype)
+            _set_brackets(symbol, sl_pct=sl_pct, working_type=wtype, tp_pct=tp_pct)
         except Exception as e:
             print("[executor] bracket warn:", e)
 

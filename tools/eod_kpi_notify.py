@@ -1,4 +1,4 @@
-cat > tools/eod_kpi_notify.py <<'PY'
+tee tools/eod_kpi_notify.py >/dev/null <<'PY'
 from __future__ import annotations
 import sys, pathlib, json, datetime as dt
 # cho phép import notifier/**

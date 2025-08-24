@@ -1,0 +1,57 @@
+cd /home/crx/CrX17
+cat > tools/append_latest_and_export.py <<'PY'
+import json, pathlib, sys
+
+H = pathlib.Path('data/decision_history.json')
+J = pathlib.Path('data/decision_history.jsonl')
+L = pathlib.Path('data/decision_latest.json')
+
+def read_last_object():
+    raw = H.read_text(encoding='utf-8') if H.exists() else ''
+    last = None
+    # (1) Thử parse cả file là JSON list
+    try:
+        j = json.loads(raw)
+        if isinstance(j, list) and j:
+            last = j[-1]
+    except Exception:
+        pass
+    # (2) Nếu thất bại, duyệt từng dòng (JSON-lines hoặc mixed)
+    if last is None:
+        lines = [ln for ln in raw.splitlines() if ln.strip()]
+        for ln in reversed(lines):
+            try:
+                obj = json.loads(ln.strip())
+                if isinstance(obj, dict):
+                    last = obj
+                    break
+            except Exception:
+                continue
+    if not isinstance(last, dict):
+        raise SystemExit("No valid JSON object found in decision_history")
+    return last
+
+def atomic_write(p: pathlib.Path, content: str):
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(p.suffix + '.tmp')
+    tmp.write_text(content, encoding='utf-8')
+    tmp.replace(p)
+
+def main():
+    last = read_last_object()
+    # append JSONL
+    J.parent.mkdir(parents=True, exist_ok=True)
+    with J.open('a', encoding='utf-8') as f:
+        f.write(json.dumps(last, ensure_ascii=False) + '\n')
+    # export latest (atomic)
+    atomic_write(L, json.dumps(last, ensure_ascii=False))
+    print("[sync] latest:", last.get("timestamp"), last.get("decision"), last.get("confidence"))
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print("[sync] ERROR:", e, file=sys.stderr)
+        raise
+PY
+chmod +x tools/append_latest_and_export.py

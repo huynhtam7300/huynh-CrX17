@@ -34,7 +34,10 @@ jobs:
             fi
 
             chmod +x scripts/*.sh 2>/dev/null || true
-            ./scripts/verify_fixpack.sh || true
 
+            # ✔ Verify fixpack – nếu FAIL sẽ dừng deploy ngay
+            ./scripts/verify_fixpack.sh
+
+            # 🔁 Kích hoạt reload
             date > reload.flag
             echo "[deploy] done $(date -u +"%Y-%m-%dT%H:%M:%SZ")"

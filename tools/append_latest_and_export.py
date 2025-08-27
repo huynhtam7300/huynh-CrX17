@@ -1,5 +1,5 @@
 # tools/append_latest_and_export.py
-# v1.3 – Gate theo floor + ép symbol + đảm bảo .env luôn override process env
+# v1.4 – Gate theo floor + ép symbol + .env override + dọn decision cũ khi không có nguồn
 
 import os, json
 from pathlib import Path
@@ -7,14 +7,13 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
-# ÉP dùng .env ở repo và override mọi biến có sẵn trong process
 load_dotenv(dotenv_path=ROOT / ".env", override=True)
 
 DATA = ROOT / "data"
-
 OPEN_FLOOR  = float(os.getenv("CRX_OPEN_CONF_FLOOR", "0.65"))
 CLOSE_FLOOR = float(os.getenv("CRX_CLOSE_CONF_FLOOR", "0.60"))
 DEFAULT_SYMBOL = os.getenv("CRX_DEFAULT_SYMBOL", "BTCUSDT")
+FRESH_SEC = int(os.getenv("CRX_DECISION_FRESH_SEC", "900"))  # 15 phút
 
 CANDIDATE_INPUTS = [
     DATA / "left_decision_raw.json",
@@ -31,6 +30,13 @@ EXECUTOR_STATE = ROOT / "executor_state.json"
 def now_utc():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+def parse_ts(s):
+    try:
+        if s.endswith("Z"): s = s.replace("Z","+00:00")
+        return datetime.fromisoformat(s)
+    except Exception:
+        return None
+
 def read_json(p: Path):
     try:
         if p.exists():
@@ -46,14 +52,6 @@ def write_json(p: Path, obj: dict):
         json.dump(obj, f, ensure_ascii=False, indent=2)
     print(f"[export] ✅ Đã ghi {p}")
 
-def pick_input():
-    for p in CANDIDATE_INPUTS:
-        if p.exists():
-            print(f"[export] Nguồn quyết định: {p}")
-            return p
-    print("[export] WARN: Không tìm thấy file quyết định thô. Bỏ qua.")
-    return None
-
 def ensure_symbol(dec: dict) -> str:
     sym = dec.get("symbol") or dec.get("pair") or dec.get("asset")
     if isinstance(sym, str) and sym.strip():
@@ -66,16 +64,31 @@ def ensure_symbol(dec: dict) -> str:
 
 def is_close_or_flip(dec: dict) -> bool:
     meta = (dec.get("meta_action") or "").upper()
-    if any(k in meta for k in ("CLOSE", "FLIP")):
-        return True
+    if any(k in meta for k in ("CLOSE","FLIP")): return True
     d = (dec.get("decision") or "").upper()
-    return d.startswith("CLOSE") or d.startswith("FLIP")
+    return d.startswith(("CLOSE","FLIP"))
+
+def cleanup_stale():
+    dec = read_json(LAST_DECISION)
+    if not isinstance(dec, dict): return
+    ts = parse_ts(dec.get("timestamp",""))
+    if not ts: return
+    age = (datetime.now(timezone.utc) - ts).total_seconds()
+    if age > FRESH_SEC:
+        try:
+            LAST_DECISION.unlink(missing_ok=True)
+            print(f"[export] INFO: xoá last_decision.json cũ (age={int(age)}s > {FRESH_SEC}s).")
+        except Exception as e:
+            print(f"[export] WARN: không xoá được last_decision.json: {e}")
 
 def main():
-    src = pick_input()
+    src = next((p for p in CANDIDATE_INPUTS if p.exists()), None)
     if not src:
+        print("[export] WARN: Không tìm thấy file quyết định thô. Bỏ qua.")
+        cleanup_stale()
         return
 
+    print(f"[export] Nguồn quyết định: {src}")
     dec = read_json(src)
     if not isinstance(dec, dict):
         print(f"[export] WARN: {src} không phải JSON object.")
@@ -84,22 +97,17 @@ def main():
     dec.setdefault("timestamp", now_utc())
     dec["symbol"] = ensure_symbol(dec)
     conf = float(dec.get("confidence") or 0.0)
-    is_cf = is_close_or_flip(dec)
-
-    floor = CLOSE_FLOOR if is_cf else OPEN_FLOOR
-    reason = f"{'close/flip' if is_cf else 'open'} floor={floor}"
+    floor = CLOSE_FLOOR if is_close_or_flip(dec) else OPEN_FLOOR
+    reason = f"{'close/flip' if is_close_or_flip(dec) else 'open'} floor={floor}"
 
     if conf >= floor:
         write_json(LAST_DECISION, dec)
-        dec2 = dict(dec)
-        dec2["export_note"] = f"exported_at={now_utc()} reason={reason}"
-        write_json(PREVIEW_DECISION, dec2)
+        out = dict(dec, export_note=f"exported_at={now_utc()} reason={reason}")
+        write_json(PREVIEW_DECISION, out)
         print(f"[export] PASS gate ({reason}); confidence={conf:.2f}; symbol={dec['symbol']}")
     else:
-        dec2 = dict(dec)
-        dec2["simulate"] = True
-        dec2["export_note"] = f"blocked_at={now_utc()} reason={reason}"
-        write_json(PREVIEW_DECISION, dec2)
+        out = dict(dec, simulate=True, export_note=f"blocked_at={now_utc()} reason={reason}")
+        write_json(PREVIEW_DECISION, out)
         if src.samefile(LAST_DECISION):
             try:
                 LAST_DECISION.unlink(missing_ok=True)

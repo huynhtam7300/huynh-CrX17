@@ -1,27 +1,27 @@
 # tools/append_latest_and_export.py
-# v1.2 – Gate theo floor + ép symbol + xử lý khi nguồn là last_decision.json
+# v1.3 – Gate theo floor + ép symbol + đảm bảo .env luôn override process env
 
 import os, json
 from pathlib import Path
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
-load_dotenv()
-
 ROOT = Path(__file__).resolve().parents[1]
+# ÉP dùng .env ở repo và override mọi biến có sẵn trong process
+load_dotenv(dotenv_path=ROOT / ".env", override=True)
+
 DATA = ROOT / "data"
 
 OPEN_FLOOR  = float(os.getenv("CRX_OPEN_CONF_FLOOR", "0.65"))
 CLOSE_FLOOR = float(os.getenv("CRX_CLOSE_CONF_FLOOR", "0.60"))
 DEFAULT_SYMBOL = os.getenv("CRX_DEFAULT_SYMBOL", "BTCUSDT")
 
-# Các ứng viên nguồn quyết định (ưu tiên từ trên xuống)
 CANDIDATE_INPUTS = [
     DATA / "left_decision_raw.json",
     DATA / "left_decision.json",
     DATA / "decision.json",
     ROOT / "decision.json",
-    ROOT / "last_decision.json",  # NEW: nếu hệ thống cũ ghi thẳng vào đây
+    ROOT / "last_decision.json",
 ]
 
 LAST_DECISION = ROOT / "last_decision.json"
@@ -90,14 +90,12 @@ def main():
     reason = f"{'close/flip' if is_cf else 'open'} floor={floor}"
 
     if conf >= floor:
-        # PASS gate → ghi last_decision.json
         write_json(LAST_DECISION, dec)
         dec2 = dict(dec)
         dec2["export_note"] = f"exported_at={now_utc()} reason={reason}"
         write_json(PREVIEW_DECISION, dec2)
         print(f"[export] PASS gate ({reason}); confidence={conf:.2f}; symbol={dec['symbol']}")
     else:
-        # BLOCK gate → chỉ ghi preview; nếu nguồn là last_decision.json thì dọn đi để Executor không đọc
         dec2 = dict(dec)
         dec2["simulate"] = True
         dec2["export_note"] = f"blocked_at={now_utc()} reason={reason}"

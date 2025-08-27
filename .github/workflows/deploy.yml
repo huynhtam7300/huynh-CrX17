@@ -1,7 +1,9 @@
 name: Deploy to VPS
+
 on:
   push:
     branches: [ "main" ]
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -13,4 +15,24 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            /home/crx/CrX17/scripts/deploy_from_github.sh
+            set -euo pipefail
+            echo "[deploy] start $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+            cd /home/crx/CrX17
+            git fetch origin
+            git reset --hard origin/main
+
+            if [ ! -d .venv ]; then
+              python3 -m venv .venv
+            fi
+            source .venv/bin/activate
+            pip -q install -U pip
+            if [ -f requirements.txt ]; then
+              pip -q install -r requirements.txt
+            fi
+
+            chmod +x scripts/*.sh 2>/dev/null || true
+            ./scripts/verify_fixpack.sh || true
+
+            date > reload.flag
+            echo "[deploy] done $(date -u +"%Y-%m-%dT%H:%M:%SZ")"

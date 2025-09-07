@@ -20,8 +20,8 @@ circuit_breakers:
 
 degrade_modes:
   safe_mode: false
-  network_slow: reduce_only      # ← bắt buộc: literal
-  data_partial: hold_new_orders  # ← bắt buộc: literal
+  network_slow: reduce_only
+  data_partial: hold_new_orders
 
 healthchecks:
   enabled: true

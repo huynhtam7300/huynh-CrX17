@@ -1,40 +1,41 @@
-meta:
-  name: "EXECUTOR"
-  version: "1.7.7"
-  chg_id: "Fix-2025-09-08"
-  description: "Đặt/đóng lệnh; Phase B chạy an toàn, executor có thể tắt bằng env."
+executor:
+  meta:
+    name: "EXECUTOR"
+    version: "1.7.7"
+    chg_id: "Fix-2025-09-08"
+    description: "Đặt/đóng lệnh; Phase B chạy an toàn, executor có thể tắt bằng env."
 
-exchange:
-  venue: "binance_futures_testnet"
-  account:
-    api_key_env: "BINANCE_API_KEY"
-    api_secret_env: "BINANCE_API_SECRET"
-  symbols: ["BTCUSDT","ETHUSDT"]
-  default_leverage_x: 5
-  position_mode: "oneway"
-  base_urls:
-    rest: "https://testnet.binancefuture.com"
-    ws: "wss://stream.binancefuture.com/ws"
+  exchange:
+    venue: "binance_futures_testnet"
+    account:
+      api_key_env: "BINANCE_API_KEY"
+      api_secret_env: "BINANCE_API_SECRET"
+    symbols: ["BTCUSDT","ETHUSDT"]
+    default_leverage_x: 5
+    position_mode: "oneway"
+    base_urls:
+      rest: "https://testnet.binancefuture.com"
+      ws: "wss://stream.binancefuture.com/ws"
 
-order_policy:
-  min_notional_usdt: 50
-  default_order_type: "MARKET"
-  time_in_force: "GTC"
-  slippage_bps_max: 25
-  reduce_only_on_close: true
-  post_only_on_open: false
+  order_policy:
+    min_notional_usdt: 50
+    default_order_type: "MARKET"
+    time_in_force: "GTC"
+    slippage_bps_max: 25
+    reduce_only_on_close: true
+    post_only_on_open: false
 
-risk_hooks:
-  enable: true
-  enforce_stop_to_beplus: true
-  max_adds_per_wave: 2
-  max_concurrent_positions: 1
-  kill_switch_on_error: true
+  risk_hooks:
+    enable: true
+    enforce_stop_to_beplus: true
+    max_adds_per_wave: 2
+    max_concurrent_positions: 1
+    kill_switch_on_error: true
 
-reconciler:
-  enabled: true
-  interval_sec: 30
-  cancel_stale_orders_sec: 45
+  reconciler:
+    enabled: true
+    interval_sec: 30
+    cancel_stale_orders_sec: 45
 
-time_sync:
-  max_clock_skew_ms: 500
+  time_sync:
+    max_clock_skew_ms: 500

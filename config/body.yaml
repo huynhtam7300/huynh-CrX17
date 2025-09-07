@@ -7,7 +7,7 @@ meta:
 modes:
   normal:
     enabled: true
-  maintenance_window: {}   # bắt buộc có mặt (loader sẽ dùng default bên trong)
+  maintenance_window: {}
 
 reconcile:
   enabled: true
@@ -20,8 +20,8 @@ circuit_breakers:
 
 degrade_modes:
   safe_mode: false
-  network_slow: {}         # bắt buộc có mặt
-  data_partial: {}         # bắt buộc có mặt
+  network_slow: reduce_only      # ← bắt buộc: literal
+  data_partial: hold_new_orders  # ← bắt buộc: literal
 
 healthchecks:
   enabled: true
@@ -29,7 +29,7 @@ healthchecks:
 
 telemetry:
   logging_level: "info"
-  slo: {}                  # bắt buộc có mặt
+  slo: {}
 
 time_sync:
   max_clock_skew_ms: 500

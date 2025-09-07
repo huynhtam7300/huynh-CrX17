@@ -1,0 +1,35 @@
+imports:
+  - config/pro_plus.yaml
+  - config/soul_macro.yaml
+
+feature_flags:
+  eval:
+    pro_plus: true
+    macro_bias: true     # SOUL-MACRO tính toán & report-only
+  behavior:
+    pro_plus: false
+    booster: false       # Xanh OFF ở Phase B
+    macro_nudge: false   # nudge macro OFF (report-only)
+    both_route: false
+
+runtime_policy:
+  orders:
+    max_concurrent_positions: 1
+  routing:
+    allow_left: true
+    allow_right: true
+    allow_both: false
+  safety:
+    open_floor: 0.65
+    close_flip_floor: 0.60
+    maker_first: true
+    ttl_plus_sec_max: 60   # TTL+ ngắn cho BUZZ (không rượt)
+  buzz_lock:
+    enabled: true
+    yellow_levels: [V1, V2]  # V3 bị khóa ở Phase B
+    red_levels: [R1, R2]
+  booster:
+    enabled: false
+  macro:
+    nudge_enabled: false    # SOUL-MACRO report-only
+    bias_horizons: ["3m","6m"]

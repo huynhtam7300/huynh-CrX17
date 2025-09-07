@@ -1,33 +1,5 @@
-meta:
-  name: "EXECUTOR / Đặt lệnh"
-  version: "1.7.7"
-  chg_id: "2025-08-17T16:24:08.946124+00:00"
-  description: "OrderBuilder/Manager, RiskHooks, Reconciler, TimeSync."
-  owners: ["you@example.com"]
-  timezone: "Asia/Bangkok"
-
-exchange:
-  name: "binance_testnet"
-  dry_run: false
-  api_keys_env: ["BINANCE_API_KEY","BINANCE_API_SECRET"]
-  max_retries: 3
-  retry_backoff_seconds: 2
-
-order_policy:
-  allowed_types: ["MARKET","LIMIT","STOP_MARKET","TAKE_PROFIT_MARKET"]
-  slippage_cap_bps: 15
-  time_in_force: "GTC"
-  reduce_only_on_exit: true
-
-risk_hooks:
-  min_confidence: 0.55
-  max_leverage: 5
-  per_symbol_max_position_usd: 300
-
-reconciler:
-  check_open_orders_seconds: 30
-  cancel_stale_minutes: 20
-
-time_sync:
-  enable_ntp: true
-  max_clock_skew_ms: 150
+executor:
+  order_policy:
+    default_order:
+      notional_usdt: 50     # khởi điểm an toàn
+  # các chi tiết khác của Executor giữ nguyên ở BODY/Executor spec

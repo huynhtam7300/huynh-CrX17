@@ -1,0 +1,20 @@
+pro_plus:
+  mode: simple   # simple | balanced | pro
+  locks:
+    lock_A_simple: true        # mặc định: chỉ V1–V2 + R1–R2; ẩn Xanh & V3
+    lock_B_boost_guard: true   # bắt buộc đang lời + stop BE+; tối đa 2 add/đợt
+    lock_C_timebox: true       # mọi 'xanh' tự hết hạn 24–48h
+    lock_D_kill_switch: true   # vi phạm an toàn ⇒ quay về Simple Mode
+    lock_E_macro_guard: true   # thiếu dữ liệu/bất đồng 3m–6m ⇒ vô hiệu macro-nudge
+  ladders:
+    yellow: [V1, V2, V3]  # BUZZ
+    green:  [X1, X2, X3]  # Booster (X3 hiếm, chỉ Phase C)
+    red:    [R1, R2]      # LOCK
+  caps:
+    add_per_step_pct:
+      X1: [20, 35]    # % so với size ban đầu (S0)
+      X2: [10, 25]    # % thêm trên size hiện tại
+    total_size_cap_phaseC: 2.00   # TRẦN tổng size ở Phase C (X3 hiếm, không vượt)
+  floors:
+    open: 0.65
+    close_flip: 0.60

@@ -1,0 +1,16 @@
+soul_macro:
+  enabled: true
+  mode: report_only     # Phase B: report-only; Phase C: nudge 'gated'
+  horizons: ["3m","6m"]
+  update_cadence: weekly
+  hysteresis:
+    enter: 0.35
+    exit: 0.20
+    min_hours_between_flips: 72
+  data_sources:
+    crypto_A: [ohlcv, funding_30d, oi_30d, vol_30d, stablecoin_90d]
+    macro_B:  [dxy_90d, ust10y_90d, nasdaq_90d, basis]
+    optional_C: [btc_etf_flow_30d, onchain_light]
+  outputs:
+    file: "data/macro_bias.json"
+    fields: [ts, version, macro_bias_3m, macro_bias_6m, macro_conf, data_coverage, notes]

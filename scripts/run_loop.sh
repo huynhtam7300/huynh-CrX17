@@ -12,7 +12,6 @@ fi
 
 while true; do
   echo "[loop] $(date -Is)"
-  # chịu lỗi: nếu script con fail, chỉ log cảnh báo
   if ! bash scripts/phaseB_cycle.sh; then
     echo "[loop] WARN: phaseB_cycle exited non-zero" | tee -a run.log
   fi

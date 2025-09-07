@@ -1,3 +1,32 @@
 body:
+  meta:
+    name: "BODY"
+    version: "1.7.7"
+    chg_id: "Fix-2025-09-08"
+    description: "Cấu hình BODY Phase B (safe)."
+
+  modes:
+    normal:
+      enabled: true
+
+  reconcile:
+    enabled: true
+    interval_sec: 60
+
+  circuit_breakers:
+    trading_halt_on_error: true
+    max_consecutive_errors: 3
+    cooldown_after_halt_sec: 300
+
+  degrade_modes:
+    safe_mode: false
+
+  healthchecks:
+    enabled: true
+    interval_sec: 60
+
+  telemetry:
+    logging_level: "info"
+
   time_sync:
-    max_clock_skew_ms: 500  # yêu cầu đồng bộ clock
+    max_clock_skew_ms: 500

@@ -1,6 +1,28 @@
-controller:
-  allowed_routes: ["LEFT", "RIGHT", "WAIT"]   # Phase B: tắt BOTH
-  inherit_safe_mode_from_right: true          # Right có quyền hãm
+meta:
+  name: "Meta-Controller"
+  version: "1.7.7"
+  chg_id: "Fix-2025-09-08"
+  description: "Điều phối tuyến {LEFT, RIGHT, WAIT} cho Phase B (BOTH off)."
+  owners: ["you@example.com"]
+  timezone: "Asia/Bangkok"
+
+routing:
+  allowed_routes: ["LEFT", "RIGHT", "WAIT"]  # Phase B: tắt BOTH
+  default_route: "LEFT"
   cooldown_switch_seconds: 15                 # chống rung
-  max_route_flips_per_hour: 8                 # 8–10/h theo plan
+  max_route_flips_per_hour: 8                 # theo plan 8–10/h
+  inherit_safe_mode_from_right: true          # Right có quyền hãm
+  symbol_fairness:
+    max_symbols_per_cycle: 2
+    rotation: "round_robin"
+
+constraints:
+  require_ttl_plus_for_explore: true
   max_parallel_orders: 1                      # chỉ 1 lệnh song song
+  max_daily_new_positions: 10
+
+notifications:
+  telegram:
+    chat_ids: []        # để trống (đang tắt noti)
+    template:
+      switch: "🔄 Đổi tuyến: {{from}} → {{to}} (lý do: {{reason}})"

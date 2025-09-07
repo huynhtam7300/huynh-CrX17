@@ -1,0 +1,47 @@
+imports:
+  - config/pro_plus.yaml
+  - config/soul_macro.yaml
+
+feature_flags:
+  eval:
+    pro_plus: true
+    macro_bias: true
+  behavior:
+    pro_plus: true
+    booster: true
+    macro_nudge: gated     # chỉ siết ngược bias, không hạ floors
+    both_route: gated      # chỉ khi 2 phía đồng pha; không tăng #lệnh
+
+runtime_policy:
+  orders:
+    max_concurrent_positions: 1
+  routing:
+    allow_left: true
+    allow_right: true
+    allow_both: true       # gated ở behavior.flags phía trên
+  safety:
+    open_floor: 0.65
+    close_flip_floor: 0.60
+    maker_first: true
+    ttl_plus_sec_max: 120  # có thể nới khi BUZZ-3 (Phase C)
+  buzz_lock:
+    enabled: true
+    yellow_levels: [V1, V2, V3]
+    red_levels: [R1, R2]
+  booster:
+    enabled: true
+    rules:
+      add_steps_max: 2                # tối đa 2 lần add/đợt
+      total_size_cap: 2.00            # trần tổng size = 2.00× S0
+      x1_add_pct_range: [20, 35]      # theo S0
+      x2_add_pct_range: [10, 25]      # theo size hiện tại
+      require_profit_R_for_x1: 0.8    # đang lời >= 0.8R
+      require_profit_R_for_x2: 1.5    # đang lời >= 1.5R
+      require_stop_at_least: "BE+"    # đã kéo stop về BE+ (hoà vốn + phí)
+      timebox_hours: [24, 48]         # auto-expire
+  macro:
+    nudge_enabled: gated
+    bias_horizons: ["3m","6m"]
+    guard:
+      require_data_freshness: true
+      handle_disagree_bias: neutral   # 3m ≠ 6m ⇒ xem như neutral, không nudge

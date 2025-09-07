@@ -1,32 +1,31 @@
-body:
-  meta:
-    name: "BODY"
-    version: "1.7.7"
-    chg_id: "Fix-2025-09-08"
-    description: "Cấu hình BODY cho Phase B."
+meta:
+  name: "BODY"
+  version: "1.7.7"
+  chg_id: "Fix-2025-09-08"
+  description: "Cấu hình BODY cho Phase B."
 
-  modes:
-    normal:
-      enabled: true
-
-  reconcile:
+modes:
+  normal:
     enabled: true
-    interval_sec: 60
 
-  circuit_breakers:
-    trading_halt_on_error: true
-    max_consecutive_errors: 3
-    cooldown_after_halt_sec: 300
+reconcile:
+  enabled: true
+  interval_sec: 60
 
-  degrade_modes:
-    safe_mode: false
+circuit_breakers:
+  trading_halt_on_error: true
+  max_consecutive_errors: 3
+  cooldown_after_halt_sec: 300
 
-  healthchecks:
-    enabled: true
-    interval_sec: 60
+degrade_modes:
+  safe_mode: false
 
-  telemetry:
-    logging_level: "info"
+healthchecks:
+  enabled: true
+  interval_sec: 60
 
-  time_sync:
-    max_clock_skew_ms: 500
+telemetry:
+  logging_level: "info"
+
+time_sync:
+  max_clock_skew_ms: 500

@@ -3,7 +3,7 @@ body:
     name: "BODY"
     version: "1.7.7"
     chg_id: "Fix-2025-09-08"
-    description: "Cấu hình BODY Phase B (safe)."
+    description: "Cấu hình BODY cho Phase B."
 
   modes:
     normal:

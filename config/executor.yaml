@@ -6,6 +6,7 @@ executor:
     description: "Đặt/đóng lệnh; Phase B chạy an toàn, executor có thể tắt bằng env."
 
   exchange:
+    name: "Binance Futures (Testnet)"         # <- BẮT BUỘC (mới)
     venue: "binance_futures_testnet"
     account:
       api_key_env: "BINANCE_API_KEY"
@@ -18,6 +19,7 @@ executor:
       ws: "wss://stream.binancefuture.com/ws"
 
   order_policy:
+    allowed_types: ["MARKET","LIMIT"]         # <- BẮT BUỘC (mới)
     min_notional_usdt: 50
     default_order_type: "MARKET"
     time_in_force: "GTC"
